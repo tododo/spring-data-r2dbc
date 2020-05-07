@@ -27,6 +27,8 @@ import org.springframework.data.r2dbc.core.StatementMapper;
 import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.RelationalPersistentProperty;
 import org.springframework.data.relational.core.query.Criteria;
+import org.springframework.data.relational.core.sql.Expressions;
+import org.springframework.data.relational.core.sql.Functions;
 import org.springframework.data.relational.core.sql.SqlIdentifier;
 import org.springframework.data.relational.repository.query.RelationalEntityMetadata;
 import org.springframework.data.relational.repository.query.RelationalParameterAccessor;
@@ -103,8 +105,13 @@ class R2dbcQueryCreator extends RelationalQueryCreator<PreparedOperation<?>> {
 
 	private PreparedOperation<?> select(@Nullable Criteria criteria, Sort sort, StatementMapper statementMapper) {
 
-		StatementMapper.SelectSpec selectSpec = statementMapper.createSelect(entityMetadata.getTableName())
-				.withProjection(getSelectProjection());
+		StatementMapper.SelectSpec selectSpec = statementMapper.createSelect(entityMetadata.getTableName());
+
+		if (tree.isCountProjection()) {
+			selectSpec = selectSpec.withProjection(Functions.count(Expressions.just("1")));
+		} else {
+			selectSpec = selectSpec.withProjection(getSelectProjection());
+		}
 
 		if (tree.isExistsProjection()) {
 			selectSpec = selectSpec.limit(1);

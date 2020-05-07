@@ -20,7 +20,6 @@ import java.util.Optional;
 
 import org.junit.Test;
 import org.reactivestreams.Publisher;
-
 import org.springframework.data.relational.core.dialect.LimitClause;
 import org.springframework.data.relational.core.dialect.LockClause;
 import org.springframework.data.relational.core.sql.LockOptions;

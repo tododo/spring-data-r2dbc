@@ -180,7 +180,7 @@ public class QueryMapper {
 			return function instanceof Aliased ? mappedFunction.as(((Aliased) function).getAlias()) : mappedFunction;
 		}
 
-		throw new IllegalArgumentException(String.format("Cannot map %s", expression));
+		return expression;
 	}
 
 	/**
