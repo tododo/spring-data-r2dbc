@@ -20,6 +20,8 @@ import static org.assertj.core.api.Assertions.*;
 import io.r2dbc.spi.ConnectionFactory;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import org.springframework.data.domain.Example;
+import org.springframework.data.domain.ExampleMatcher;
 import reactor.test.StepVerifier;
 
 import java.util.Map;
@@ -86,7 +88,7 @@ public class H2SimpleR2dbcRepositoryIntegrationTests extends AbstractSimpleR2dbc
 
 		this.jdbc.execute("CREATE TABLE always_new (\n" //
 				+ "    id          integer PRIMARY KEY,\n" //
-				+ "    name        varchar(255) NOT NULL" //
+				+ "    name        varchar(255) NOT NULL\n" //
 				+ ");");
 
 		RelationalEntityInformation<AlwaysNew, Long> entityInformation = new MappingRelationalEntityInformation<>(

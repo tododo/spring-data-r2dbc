@@ -16,6 +16,9 @@
 package org.springframework.data.r2dbc.repository.support;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.springframework.data.domain.ExampleMatcher.*;
+import static org.springframework.data.domain.ExampleMatcher.GenericPropertyMatchers.*;
+import static org.springframework.data.domain.ExampleMatcher.StringMatcher.*;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -33,12 +36,12 @@ import javax.sql.DataSource;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.Version;
+import org.springframework.data.domain.Example;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.r2dbc.convert.MappingR2dbcConverter;
 import org.springframework.data.r2dbc.core.ReactiveDataAccessStrategy;
@@ -68,16 +71,23 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 	@Autowired private ReactiveDataAccessStrategy strategy;
 
 	SimpleR2dbcRepository<LegoSet, Integer> repository;
+	SimpleR2dbcRepository<BoxedLegoSet, Integer> boxedRepository;
 	JdbcTemplate jdbc;
 
 	@BeforeEach
 	void before() {
 
+		MappingR2dbcConverter converter = new MappingR2dbcConverter(mappingContext);
+
 		RelationalEntityInformation<LegoSet, Integer> entityInformation = new MappingRelationalEntityInformation<>(
 				(RelationalPersistentEntity<LegoSet>) mappingContext.getRequiredPersistentEntity(LegoSet.class));
 
-		this.repository = new SimpleR2dbcRepository<>(entityInformation, databaseClient,
-				new MappingR2dbcConverter(mappingContext), strategy);
+		this.repository = new SimpleR2dbcRepository<>(entityInformation, databaseClient, converter, strategy);
+
+		RelationalEntityInformation<BoxedLegoSet, Integer> boxedEntityInformation = new MappingRelationalEntityInformation<>(
+				(RelationalPersistentEntity<BoxedLegoSet>) mappingContext.getRequiredPersistentEntity(BoxedLegoSet.class));
+
+		this.boxedRepository = new SimpleR2dbcRepository<>(boxedEntityInformation, databaseClient, converter, strategy);
 
 		this.jdbc = createJdbcTemplate(createDataSource());
 		try {
@@ -194,8 +204,7 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 		assertThat(legoSet.getVersion()).isEqualTo(43);
 
 		Map<String, Object> map = jdbc.queryForMap("SELECT * FROM legoset");
-		assertThat(map)
-				.containsEntry("name", "SCHAUFELRADBAGGER") //
+		assertThat(map).containsEntry("name", "SCHAUFELRADBAGGER") //
 				.containsEntry("manual", 14) //
 				.containsEntry("version", 43) //
 				.containsKey("id");
@@ -329,12 +338,9 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 				.map(LegoSet::getName) //
 				.collectList() //
 				.as(StepVerifier::create) //
-				.assertNext(actual -> assertThat(actual).containsExactly(
-						"SCHAUFELRADBAGGER",
-						"FORSCHUNGSSCHIFF",
-						"RALLYEAUTO",
-						"VOLTRON"
-				)).verifyComplete();
+				.assertNext(actual -> assertThat(actual).containsExactly("SCHAUFELRADBAGGER", "FORSCHUNGSSCHIFF", "RALLYEAUTO",
+						"VOLTRON"))
+				.verifyComplete();
 	}
 
 	@Test
@@ -480,21 +486,277 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 		assertThat(count).isEqualTo(0);
 	}
 
+	@Test
+	void shouldSelectByExampleUsingId() {
+
+		jdbc.execute("INSERT INTO legoset (name, manual) VALUES('SCHAUFELRADBAGGER', 12)");
+		Integer id = jdbc.queryForObject("SELECT id FROM legoset", Integer.class);
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+		legoSet.setId(id);
+
+		Example<BoxedLegoSet> example = Example.of(legoSet);
+
+		boxedRepository.findOne(example) //
+				.as(StepVerifier::create) //
+				.expectNext(new BoxedLegoSet(id, "SCHAUFELRADBAGGER", 12, null)) //
+				.verifyComplete();
+	}
+
+	@Test
+	void shouldSelectByExampleUsingName() {
+
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(0, 'SCHAUFELRADBAGGER', 12)");
+		Integer id = jdbc.queryForObject("SELECT id FROM legoset", Integer.class);
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+		legoSet.setName("SCHAUFELRADBAGGER");
+
+		Example<BoxedLegoSet> example = Example.of(legoSet);
+
+		boxedRepository.findOne(example) //
+				.as(StepVerifier::create) //
+				.expectNext(new BoxedLegoSet(id, "SCHAUFELRADBAGGER", 12, null)) //
+				.verifyComplete();
+	}
+
+	@Test
+	void shouldSelectByExampleUsingManual() {
+
+		jdbc.execute("INSERT INTO legoset (name, manual) VALUES('SCHAUFELRADBAGGER', 12)");
+		Integer id = jdbc.queryForObject("SELECT id FROM legoset", Integer.class);
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+		legoSet.setManual(12);
+
+		Example<BoxedLegoSet> example = Example.of(legoSet);
+
+		boxedRepository.findOne(example) //
+				.as(StepVerifier::create) //
+				.expectNext(new BoxedLegoSet(id, "SCHAUFELRADBAGGER", 12, null)) //
+				.verifyComplete();
+	}
+
+	@Test
+	void shouldSelectByExampleUsingGlobalStringMatcher() {
+
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(1, 'Moon space base', 12)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(2, 'Mars space base', 13)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(3, 'Moon construction kit', 14)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(4, 'Mars construction kit', 15)");
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+
+		legoSet.setName("Moon");
+		Example<BoxedLegoSet> exampleByStarting = Example.of(legoSet, matching().withStringMatcher(STARTING));
+
+		boxedRepository.findAll(exampleByStarting) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base") //
+				.expectNext("Moon construction kit") //
+				.verifyComplete();
+
+		legoSet.setName("base");
+		Example<BoxedLegoSet> exampleByEnding = Example.of(legoSet, matching().withStringMatcher(ENDING));
+
+		boxedRepository.findAll(exampleByEnding) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base") //
+				.expectNext("Mars space base") //
+				.verifyComplete();
+
+		legoSet.setName("construction");
+		Example<BoxedLegoSet> exampleByContaining = Example.of(legoSet, matching().withStringMatcher(CONTAINING));
+
+		boxedRepository.findAll(exampleByContaining) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon construction kit") //
+				.expectNext("Mars construction kit") //
+				.verifyComplete();
+	}
+
+	@Test
+	void shouldSelectByExampleUsingFieldLevelStringMatcher() {
+
+		jdbc.execute("INSERT INTO legoset (name, manual) VALUES('Moon space base', 12)");
+		jdbc.execute("INSERT INTO legoset (name, manual) VALUES('Mars space base', 13)");
+		jdbc.execute("INSERT INTO legoset (name, manual) VALUES('Moon construction kit', 14)");
+		jdbc.execute("INSERT INTO legoset (name, manual) VALUES('Mars construction kit', 15)");
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+
+		legoSet.setName("Moon");
+		Example<BoxedLegoSet> exampleByFieldBasedStartsWith = Example.of(legoSet,
+				matching().withMatcher("name", startsWith()));
+
+		boxedRepository.findAll(exampleByFieldBasedStartsWith) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base") //
+				.expectNext("Moon construction kit") //
+				.verifyComplete();
+
+		legoSet.setName("base");
+		Example<BoxedLegoSet> exampleByFieldBasedEndsWith = Example.of(legoSet, matching().withMatcher("name", endsWith()));
+
+		boxedRepository.findAll(exampleByFieldBasedEndsWith) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base") //
+				.expectNext("Mars space base") //
+				.verifyComplete();
+
+		legoSet.setName("construction");
+		Example<BoxedLegoSet> exampleByFieldBasedConstruction = Example.of(legoSet,
+				matching().withMatcher("name", contains()));
+
+		boxedRepository.findAll(exampleByFieldBasedConstruction) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon construction kit") //
+				.expectNext("Mars construction kit") //
+				.verifyComplete();
+	}
+
+	@Test
+	void shouldSelectByExampleIgnoringCase() {
+
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(1, 'Moon space base', 12)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(2, 'Mars space base', 13)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(3, 'Moon construction kit', 14)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(4, 'Mars construction kit', 15)");
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+
+		legoSet.setName("moon SPACE bAsE");
+		Example<BoxedLegoSet> exampleIgnoreCase = Example.of(legoSet, matching().withIgnoreCase());
+
+		boxedRepository.findAll(exampleIgnoreCase) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base") //
+				.verifyComplete();
+
+		legoSet.setName("moon SPACE bAsE");
+		Example<BoxedLegoSet> exampleByFieldBasedStartsWith = Example.of(legoSet,
+				matching().withMatcher("name", ignoreCase()));
+
+		boxedRepository.findAll(exampleByFieldBasedStartsWith) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base") //
+				.verifyComplete();
+
+	}
+
+	@Test
+	void shouldFailSelectByExampleWhenUsingRegEx() {
+
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(1, 'Moon space base', 12)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(2, 'Mars space base', 13)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(3, 'Moon construction kit', 14)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(4, 'Mars construction kit', 15)");
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+
+		legoSet.setName("moon");
+
+		Example<BoxedLegoSet> exampleWithRegExGlobal = Example.of(legoSet, matching().withStringMatcher(REGEX));
+
+		assertThatIllegalStateException().isThrownBy(() -> {
+
+			boxedRepository.findAll(exampleWithRegExGlobal) //
+					.map(BoxedLegoSet::getName) //
+					.as(StepVerifier::create) //
+					.expectNext("Moon space base") //
+					.verifyComplete();
+		});
+
+		Example<BoxedLegoSet> exampleWithFieldRegEx = Example.of(legoSet, matching().withMatcher("name", regex()));
+
+		assertThatIllegalStateException().isThrownBy(() -> {
+
+			boxedRepository.findAll(exampleWithFieldRegEx) //
+					.map(BoxedLegoSet::getName) //
+					.as(StepVerifier::create) //
+					.expectNext("Moon space base") //
+					.verifyComplete();
+		});
+
+	}
+
+	@Test
+	void shouldSelectByExampleIncludingNull() {
+
+		jdbc.execute("INSERT INTO legoset (id, name, extra, manual) VALUES(1, 'Moon space base', 'base', 12)");
+		jdbc.execute("INSERT INTO legoset (id, name, extra, manual) VALUES(2, 'Mars space base', 'base', 13)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(3, 'Moon construction kit', 14)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(4, 'Mars construction kit', 15)");
+
+		BoxedLegoSet legoSet = new BoxedLegoSet();
+		legoSet.setExtra("base");
+
+		Example<BoxedLegoSet> exampleIncludingNull = Example.of(legoSet, matching().withIncludeNullValues());
+
+		boxedRepository.findAll(exampleIncludingNull) //
+				.map(BoxedLegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base", "Mars space base", "Moon construction kit", "Mars construction kit") //
+				.verifyComplete();
+	}
+
+	@Test
+	void shouldSelectByExampleWithAnyMatching() {
+
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(1, 'Moon space base', 12)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(2, 'Mars space base', 13)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(3, 'Moon construction kit', 14)");
+		jdbc.execute("INSERT INTO legoset (id, name, manual) VALUES(4, 'Mars construction kit', 15)");
+
+		LegoSet legoSet = new LegoSet();
+		legoSet.setName("Moon space base");
+		legoSet.setManual(15);
+
+		Example<LegoSet> exampleIncludingNull = Example.of(legoSet, matchingAny());
+
+		repository.findAll(exampleIncludingNull) //
+				.map(LegoSet::getName) //
+				.as(StepVerifier::create) //
+				.expectNext("Moon space base", "Mars construction kit") //
+				.verifyComplete();
+	}
+
 	@Data
 	@Table("legoset")
 	@AllArgsConstructor
 	@NoArgsConstructor
 	static class LegoSet {
+
 		@Id int id;
 		String name;
 		Integer manual;
+	}
 
+	@Data
+	@Table("legoset")
+	@AllArgsConstructor
+	@NoArgsConstructor
+	static class BoxedLegoSet {
+
+		@Id Integer id;
+		String name;
+		Integer manual;
+		String extra;
 	}
 
 	@Data
 	@Table("legoset")
 	@NoArgsConstructor
 	static class LegoSetVersionable extends LegoSet {
+
 		@Version Integer version;
 
 		LegoSetVersionable(int id, String name, Integer manual, Integer version) {
@@ -507,6 +769,7 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 	@Table("legoset")
 	@NoArgsConstructor
 	static class LegoSetPrimitiveVersionable extends LegoSet {
+
 		@Version int version;
 
 		LegoSetPrimitiveVersionable(int id, String name, Integer manual, int version) {
