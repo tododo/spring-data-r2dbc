@@ -21,6 +21,7 @@ import javax.sql.DataSource;
 
 import org.junit.ClassRule;
 import org.junit.runner.RunWith;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.r2dbc.config.AbstractR2dbcConfiguration;
 import org.springframework.data.r2dbc.testing.ExternalDatabase;
@@ -43,6 +44,7 @@ public class SqlServerSimpleR2dbcRepositoryIntegrationTests extends AbstractSimp
 	static class IntegrationTestConfiguration extends AbstractR2dbcConfiguration {
 
 		@Override
+		@Bean("theConnectionFactory")
 		public ConnectionFactory connectionFactory() {
 			return SqlServerTestSupport.createConnectionFactory(database);
 		}
