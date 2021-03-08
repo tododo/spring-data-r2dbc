@@ -17,9 +17,22 @@ package org.springframework.data.r2dbc.repository.support;
 
 import static org.assertj.core.api.Assertions.*;
 
+import io.r2dbc.spi.ConnectionFactory;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.support.GenericApplicationContext;
+import org.springframework.data.r2dbc.config.AbstractR2dbcConfiguration;
+import org.springframework.data.r2dbc.connectionfactory.R2dbcTransactionManager;
+import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
+import org.springframework.stereotype.Service;
+import org.springframework.test.context.ContextConfiguration;
+import org.springframework.transaction.ReactiveTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.annotation.Transactional;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -38,15 +51,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.domain.Persistable;
-import org.springframework.data.r2dbc.convert.MappingR2dbcConverter;
 import org.springframework.data.r2dbc.core.DatabaseClient;
 import org.springframework.data.r2dbc.core.ReactiveDataAccessStrategy;
 import org.springframework.data.r2dbc.testing.R2dbcIntegrationTestSupport;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
-import org.springframework.data.relational.core.mapping.RelationalPersistentEntity;
 import org.springframework.data.relational.core.mapping.Table;
-import org.springframework.data.relational.repository.query.RelationalEntityInformation;
-import org.springframework.data.relational.repository.support.MappingRelationalEntityInformation;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
@@ -54,25 +63,53 @@ import org.springframework.jdbc.core.JdbcTemplate;
  *
  * @author Mark Paluch
  */
+@ContextConfiguration
 public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2dbcIntegrationTestSupport {
-
+	@Autowired
+	GenericApplicationContext context;
 	@Autowired private DatabaseClient databaseClient;
 
 	@Autowired private RelationalMappingContext mappingContext;
 
 	@Autowired private ReactiveDataAccessStrategy strategy;
 
-	SimpleR2dbcRepository<LegoSet, Integer> repository;
+	@Autowired LegoSetRepository repository;
+
+	@Autowired  private TransactionalService service;
+
 	JdbcTemplate jdbc;
 
+
+
+	@Configuration
+	@EnableTransactionManagement
+	@EnableR2dbcRepositories
+	@ComponentScan
+	static class Config extends AbstractR2dbcConfiguration {
+
+		@Autowired
+		GenericApplicationContext context;
+
+		@Override
+		@Bean
+		public ConnectionFactory connectionFactory() {
+			return lookup();
+		}
+
+		ConnectionFactory lookup() {
+			return context.getBean("theConnectionFactory", ConnectionFactory.class);
+		}
+
+		@Bean
+		ReactiveTransactionManager txMgr(ConnectionFactory connectionFactory) {
+			return new R2dbcTransactionManager(connectionFactory);
+		}
+
+
+	}
 	@Before
 	public void before() {
 
-		RelationalEntityInformation<LegoSet, Integer> entityInformation = new MappingRelationalEntityInformation<>(
-				(RelationalPersistentEntity<LegoSet>) mappingContext.getRequiredPersistentEntity(LegoSet.class));
-
-		this.repository = new SimpleR2dbcRepository<>(entityInformation, databaseClient,
-				new MappingR2dbcConverter(mappingContext), strategy);
 
 		this.jdbc = createJdbcTemplate(createDataSource());
 		try {
@@ -100,6 +137,27 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 	 * @return the CREATE TABLE statement for table {@code legoset} with three columns.
 	 */
 	protected abstract String getCreateTableStatement();
+
+	@Test
+	public void shouldRollbackRepositoryTransactions() {
+		service.shouldRollbackRepository().as(StepVerifier::create).expectError().verify();
+		Integer count = jdbc.queryForObject("SELECT count(*) FROM legoset", Integer.class);
+		assertThat(count).isEqualTo(0);
+	}
+
+	@Test
+	public void shouldRollbackDatabaseClientInsertTransactions() {
+		service.shouldRollbackDatabaseClientInsertSpec().as(StepVerifier::create).expectError().verify();
+		Integer count = jdbc.queryForObject("SELECT count(*) FROM legoset", Integer.class);
+		assertThat(count).isEqualTo(0);
+	}
+
+	@Test
+	public void shouldRollbackDatabaseClientExecuteTransactions() {
+		service.shouldRollbackDatabaseClient().as(StepVerifier::create).expectError().verify();
+		Integer count = jdbc.queryForObject("SELECT count(*) FROM legoset", Integer.class);
+		assertThat(count).isEqualTo(0);
+	}
 
 	@Test
 	public void shouldSaveNewObject() {
@@ -374,7 +432,6 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 		@Id Integer id;
 		String name;
 		Integer manual;
-
 		@Override
 		public boolean isNew() {
 			return id == null;
@@ -390,6 +447,78 @@ public abstract class AbstractSimpleR2dbcRepositoryIntegrationTests extends R2db
 		@Override
 		public boolean isNew() {
 			return true;
+		}
+	}
+
+	@Service
+	static class TransactionalService {
+
+		private LegoSetRepository repository;
+		private DatabaseClient databaseClient;
+
+		public TransactionalService(DatabaseClient databaseClient, LegoSetRepository repository) {
+			this.repository = repository;
+			this.databaseClient = databaseClient;
+		}
+
+		@Transactional
+		public Mono<Void> shouldRollbackRepository() {
+			LegoSet l1 = new LegoSet(null, "good", 12);
+
+			Mono<LegoSet> m1 = repository.save(l1);
+			LegoSet l2 = new LegoSet(null,
+															 "ggoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodood", 12);
+			Mono<LegoSet> m2 = repository.save(l2);
+			return m1.then(m2).then();
+		}
+		private String badName =
+			"ggoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodgoodood";
+
+		@Transactional
+		public Mono<Void> shouldRollbackDatabaseClient() {
+			Mono<Void> m1 = databaseClient.execute("INSERT INTO LEGOSET  (name, manual) VALUES(@name, @manual)").bind(0,
+																																																					 badName).bind(1,
+																																																								 1).then();
+			Mono<Void> m2 = databaseClient.execute("INSERT INTO LEGOSET  (name, manual) VALUES(@name, @manual)").bind(0,
+																																																								"good").bind(1,
+																																																															1).then();
+			return m1.then(m2).then();
+		}
+
+		@Transactional
+		public Mono<Void> shouldRollbackDatabaseClientInsertSpec() {
+			Mono<Void> m1 = databaseClient.insert().into("legoset").value("name", badName).value("manual",
+																																													 Integer.valueOf(1)).then();
+			Mono<Void> m2 = databaseClient.insert().into("legoset").value("name", "good").value("manual",
+																																													Integer.valueOf(1)).then();
+			return m1.then(m2).then();
+		}
+
+		@Transactional
+		public Flux<Object> emitTransactionIds(Mono<Void> prepareTransaction, String idStatement) {
+
+			Flux<Object> txId = databaseClient.execute(idStatement) //
+				.map((row, md) -> row.get(0)) //
+				.all();
+
+			return prepareTransaction.thenMany(txId.concatWith(txId));
+		}
+
+		@Transactional
+		public Flux<Integer> shouldRollbackTransactionUsingTransactionalOperator(String insertStatement) {
+
+			return databaseClient.execute(insertStatement) //
+				.bind(0, 42055) //
+				.bind(1, "SCHAUFELRADBAGGER") //
+				.bindNull(2, Integer.class) //
+				.fetch().rowsUpdated() //
+				.thenMany(Mono.fromSupplier(() -> {
+					throw new IllegalStateException("failed");
+				}));
+		}
+
+		public DatabaseClient getDatabaseClient() {
+			return databaseClient;
 		}
 	}
 }
