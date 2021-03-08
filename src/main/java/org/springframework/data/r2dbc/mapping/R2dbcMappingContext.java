@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ package org.springframework.data.r2dbc.mapping;
 
 import org.springframework.data.relational.core.mapping.NamingStrategy;
 import org.springframework.data.relational.core.mapping.RelationalMappingContext;
+import org.springframework.data.util.ReflectionUtils;
 import org.springframework.data.util.TypeInformation;
 
 /**
@@ -40,12 +41,17 @@ public class R2dbcMappingContext extends RelationalMappingContext {
 		super(namingStrategy);
 	}
 
-	/* 
+	/*
 	 * (non-Javadoc)
 	 * @see org.springframework.data.mapping.context.AbstractMappingContext#shouldCreatePersistentEntityFor(org.springframework.data.util.TypeInformation)
 	 */
 	@Override
 	protected boolean shouldCreatePersistentEntityFor(TypeInformation<?> type) {
-		return !R2dbcSimpleTypeHolder.HOLDER.isSimpleType(type.getType());
+
+		if (R2dbcSimpleTypeHolder.HOLDER.isSimpleType(type.getType())) {
+			return false;
+		}
+
+		return !ReflectionUtils.isKotlinClass(type.getType()) || ReflectionUtils.isSupportedKotlinClass(type.getType());
 	}
 }

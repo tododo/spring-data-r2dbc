@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 the original author or authors.
+ * Copyright 2019-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 import org.springframework.data.mapping.model.SimpleTypeHolder;
 
@@ -36,8 +37,8 @@ public class R2dbcSimpleTypeHolder extends SimpleTypeHolder {
 	/**
 	 * Set of R2DBC simple types.
 	 */
-	public static final Set<Class<?>> R2DBC_SIMPLE_TYPES = Collections
-			.unmodifiableSet(new HashSet<>(Arrays.asList(OutboundRow.class, Row.class, BigInteger.class, BigDecimal.class)));
+	public static final Set<Class<?>> R2DBC_SIMPLE_TYPES = Collections.unmodifiableSet(
+			new HashSet<>(Arrays.asList(OutboundRow.class, Row.class, BigInteger.class, BigDecimal.class, UUID.class)));
 
 	public static final SimpleTypeHolder HOLDER = new R2dbcSimpleTypeHolder();
 

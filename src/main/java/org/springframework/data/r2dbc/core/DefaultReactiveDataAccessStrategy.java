@@ -1,5 +1,5 @@
 /*
- * Copyright 2018-2019 the original author or authors.
+ * Copyright 2018-2020 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,6 +47,7 @@ import org.springframework.data.relational.core.mapping.RelationalPersistentProp
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
+import org.springframework.util.CollectionUtils;
 
 /**
  * Default {@link ReactiveDataAccessStrategy} implementation.
@@ -244,7 +245,17 @@ public class DefaultReactiveDataAccessStrategy implements ReactiveDataAccessStra
 			throw new InvalidDataAccessResourceUsageException(
 					"Dialect " + this.dialect.getClass().getName() + " does not support array columns");
 		}
-		Class<?> actualType = property.getActualType();
+
+		Class<?> actualType = null;
+		if (value instanceof Collection) {
+			actualType = CollectionUtils.findCommonElementType((Collection<?>) value);
+		} else if (value.getClass().isArray()) {
+			actualType = value.getClass().getComponentType();
+		}
+
+		if (actualType == null) {
+			actualType = property.getActualType();
+		}
 
 		if (value.isEmpty()) {
 
